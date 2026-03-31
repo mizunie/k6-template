@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reporte k6 - Dashboard By Mizunie</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: bold;
+    }
+
+    .stat-small {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-custom {
+      height: 8px;
+      border-radius: 4px;
+    }
+
+    .metric-card {
+      transition: transform 0.2s;
+      cursor: pointer;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-5px);
+    }
+
+    .chart-container {
+      position: relative;
+      height: 300px;
+    }
+
+    .badge-302 {
+      background-color: #f59e0b;
+    }
+
+    .badge-200 {
+      background-color: #10b981;
+    }
+
+    hr {
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <div class="container">
+      <!-- Header -->
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="bg-white rounded-3 shadow p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+              <div>
+                <h1 class="display-5 fw-bold" style="color: #667eea;">
+                  <i class="fas fa-chart-line"></i> Dashboard k6
+                </h1>
+                <p class="text-muted mb-0">Análisis completo de rendimiento</p>
+              </div>
+              <div class="mt-2 mt-sm-0">
+                <button class="btn btn-outline-primary" @click="cargarArchivo">
+                  <i class="fas fa-upload"></i> Cargar JSON
+                </button>
+                <input type="file" ref="fileInput" @change="procesarArchivo" accept=".json" class="d-none">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div v-if="cargando" class="bg-white rounded-3 shadow p-5">
+        <div class="loading">
+          <div class="spinner"></div>
+          <h5>Procesando archivo JSON...</h5>
+        </div>
+      </div>
+
+      <!-- Dashboard -->
+      <div v-else-if="metricas">
+        <!-- Fila 1: Métricas principales -->
+        <div class="row g-4 mb-4">
+          <div class="col-md-3">
+            <div class="card metric-card border-0 shadow h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h6 class="text-muted mb-2">Total Peticiones</h6>
+                    <div class="stat-number">{{ formatNumber(metricas.totalPeticiones) }}</div>
+                    <small class="text-muted">http_reqs</small>
+                  </div>
+                  <div class="bg-primary bg-opacity-10 rounded-circle p-3">
+                    <i class="fas fa-exchange-alt fa-2x text-primary"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card metric-card border-0 shadow h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h6 class="text-muted mb-2">Tasa de Éxito</h6>
+                    <div class="stat-number">{{ metricas.tasaExito }}%</div>
+                    <small class="text-muted">checks pass rate</small>
+                  </div>
+                  <div class="bg-success bg-opacity-10 rounded-circle p-3">
+                    <i class="fas fa-check-circle fa-2x text-success"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card metric-card border-0 shadow h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h6 class="text-muted mb-2">Tasa de Fallos</h6>
+                    <div class="stat-number">{{ metricas.tasaFallos }}%</div>
+                    <small class="text-muted">http_req_failed</small>
+                  </div>
+                  <div class="bg-danger bg-opacity-10 rounded-circle p-3">
+                    <i class="fas fa-times-circle fa-2x text-danger"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card metric-card border-0 shadow h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h6 class="text-muted mb-2">VUs Máximos</h6>
+                    <div class="stat-number">{{ metricas.vusMax }}</div>
+                    <small class="text-muted">usuarios virtuales concurrentes</small>
+                  </div>
+                  <div class="bg-info bg-opacity-10 rounded-circle p-3">
+                    <i class="fas fa-users fa-2x text-info"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fila 2: Tiempos de respuesta -->
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="card border-0 shadow h-100">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Tiempos de Respuesta</h5>
+              </div>
+              <div class="card-body">
+                <div class="row text-center">
+                  <div class="col-6 mb-3">
+                    <div class="text-muted small">Promedio</div>
+                    <div class="stat-small text-primary">{{ metricas.promedio }}ms</div>
+                  </div>
+                  <div class="col-6 mb-3">
+                    <div class="text-muted small">Percentil 95 (p95)</div>
+                    <div class="stat-small text-warning">{{ metricas.p95 }}ms</div>
+                  </div>
+                  <div class="col-6">
+                    <div class="text-muted small">Mínimo</div>
+                    <div class="stat-small text-success">{{ metricas.minimo }}ms</div>
+                  </div>
+                  <div class="col-6">
+                    <div class="text-muted small">Máximo</div>
+                    <div class="stat-small text-danger">{{ metricas.maximo }}ms</div>
+                  </div>
+                </div>
+                <hr>
+                <div class="text-muted small">Desviación Estándar: {{ metricas.desviacion }}ms</div>
+                <div class="progress progress-custom mt-2">
+                  <div class="progress-bar bg-info" role="progressbar"
+                    :style="{width: (metricas.p95 / metricas.maximo * 100) + '%'}" :aria-valuenow="metricas.p95"
+                    aria-valuemin="0" :aria-valuemax="metricas.maximo"></div>
+                </div>
+                <div class="mt-2">
+                  <small class="text-muted">
+                    <i class="fas fa-info-circle"></i>
+                    El percentil 95 indica que el 95% de las peticiones fueron más rápidas que {{ metricas.p95 }}ms
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card border-0 shadow h-100">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-tachometer-alt"></i> Rendimiento</h5>
+              </div>
+              <div class="card-body">
+                <div class="row text-center">
+                  <div class="col-6 mb-3">
+                    <div class="text-muted small">Datos Enviados</div>
+                    <div class="stat-small text-primary">{{ formatBytes(metricas.dataSent) }}</div>
+                    <small class="text-muted">total</small>
+                  </div>
+                  <div class="col-6 mb-3">
+                    <div class="text-muted small">Datos Recibidos</div>
+                    <div class="stat-small text-success">{{ formatBytes(metricas.dataReceived) }}</div>
+                    <small class="text-muted">total</small>
+                  </div>
+                  <div class="col-6">
+                    <div class="text-muted small">Peticiones por segundo</div>
+                    <div class="stat-small text-info">{{ metricas.rps.toFixed(2) }} req/s</div>
+                  </div>
+                  <div class="col-6">
+                    <div class="text-muted small">Duración total</div>
+                    <div class="stat-small">{{ metricas.duracionTotal }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fila 3: Gráficas -->
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="card border-0 shadow">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Distribución de Tiempos</h5>
+              </div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="histogramaChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card border-0 shadow">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Evolución de VUs</h5>
+              </div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="vusChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fila 4: Métricas por URL y Status -->
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="card border-0 shadow">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-globe"></i> Detalle por URL</h5>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>URL</th>
+                        <th>Peticiones</th>
+                        <th>Promedio</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="url in metricas.peticionesPorUrl" :key="url.name">
+                        <td><code class="small">{{ truncarUrl(url.name) }}</code></td>
+                        <td>{{ url.count }}</td>
+                        <td>{{ url.avg }}ms</td>
+                        <td>
+                          <span :class="'badge badge-' + url.status">{{ url.status }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card border-0 shadow">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Distribución por Status</h5>
+              </div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas id="statusChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fila 5: Checks detallados -->
+        <div class="row">
+          <div class="col-12">
+            <div class="card border-0 shadow">
+              <div class="card-header bg-white border-0 pt-4">
+                <h5 class="mb-0"><i class="fas fa-check-double"></i> Verificaciones (Checks)</h5>
+              </div>
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-md-8">
+                    <div class="progress" style="height: 30px;">
+                      <div class="progress-bar bg-success" :style="{width: metricas.porcentajeChecks + '%'}"
+                        role="progressbar">
+                        Éxito: {{ metricas.porcentajeChecks }}%
+                      </div>
+                      <div class="progress-bar bg-danger" :style="{width: (100 - metricas.porcentajeChecks) + '%'}"
+                        role="progressbar">
+                        Fallo: {{ (100 - metricas.porcentajeChecks).toFixed(2) }}%
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-4 text-center">
+                    <div class="row">
+                      <div class="col-6">
+                        <div class="text-success">
+                          <i class="fas fa-check-circle"></i> {{ metricas.checksExitosos }}
+                        </div>
+                        <small>exitosos</small>
+                      </div>
+                      <div class="col-6">
+                        <div class="text-danger">
+                          <i class="fas fa-times-circle"></i> {{ metricas.checksFallidos }}
+                        </div>
+                        <small>fallidos</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-3" v-if="metricas.detalleChecks.length">
+                  <h6>Detalle por tipo de check:</h6>
+                  <div v-for="check in metricas.detalleChecks" :key="check.name" class="mb-2">
+                    <span>{{ check.name }}</span>
+                    <div class="progress progress-custom mt-1">
+                      <div class="progress-bar" :class="check.tasa === 100 ? 'bg-success' : 'bg-warning'"
+                        :style="{width: check.tasa + '%'}">
+                        {{ check.tasa.toFixed(1) }}%
+                      </div>
+                    </div>
+                    <small class="text-muted">{{ check.pasaron }} de {{ check.total }} verificaciones</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="row mt-4">
+          <div class="col-12 text-center text-white-50 small">
+            <i class="fas fa-chart-simple"></i> Dashboard generado desde JSON de k6
+          </div>
+        </div>
+      </div>
+
+      <!-- Sin datos -->
+      <div v-else class="bg-white rounded-3 shadow p-5 text-center">
+        <i class="fas fa-chart-line fa-4x text-muted mb-3"></i>
+        <h4>No hay datos cargados</h4>
+        <p class="text-muted">Haz clic en "Cargar JSON" y selecciona tu archivo resultados.json</p>
+        <button class="btn btn-primary" @click="cargarArchivo">
+          <i class="fas fa-upload"></i> Cargar archivo
+        </button>
+        <div class="mt-3">
+          <small class="text-muted">
+            <i class="fas fa-info-circle"></i>
+            Genera el JSON con: <code>k6 run --out json=resultados.json test.js</code>
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref } = Vue;
+
+    createApp({
+      setup() {
+        const cargando = ref(false);
+        const metricas = ref(null);
+        const fileInput = ref(null);
+        let charts = {};
+
+        const formatBytes = (bytes) => {
+          if (!bytes) return '0 B';
+          const k = 1024;
+          const sizes = ['B', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        };
+
+        const formatNumber = (num) => {
+          return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        };
+
+        const truncarUrl = (url) => {
+          const partes = url.split('/');
+          return partes[partes.length - 1] || url;
+        };
+
+        const procesarArchivo = async (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          cargando.value = true;
+
+          try {
+            const text = await file.text();
+            const lineas = text.split('\n').filter(line => line.trim());
+
+            // Estructuras de datos
+            const duraciones = [];
+            const checks = { exitosos: 0, fallidos: 0, porNombre: new Map() };
+            const peticionesPorUrl = new Map();
+            const statusPorUrl = new Map();
+            const vusPoints = [];
+            const dataPoints = { sent: 0, received: 0 };
+            let iteraciones = 0;
+            let tiempoInicio = null;
+            let tiempoFin = null;
+
+            for (const linea of lineas) {
+              try {
+                const obj = JSON.parse(linea);
+
+                // Métricas de duración
+                if (obj.type === 'Point' && obj.metric === 'http_req_duration') {
+                  const valor = obj.data.value;
+                  const url = obj.data.tags?.url || 'desconocida';
+                  const status = obj.data.tags?.status || 'unknown';
+
+                  duraciones.push(valor);
+
+                  // Agrupar por URL
+                  if (!peticionesPorUrl.has(url)) {
+                    peticionesPorUrl.set(url, { count: 0, total: 0, name: url, status: status });
+                  }
+                  const urlData = peticionesPorUrl.get(url);
+                  urlData.count++;
+                  urlData.total += valor;
+
+                  // Status por URL
+                  if (!statusPorUrl.has(status)) {
+                    statusPorUrl.set(status, 0);
+                  }
+                  statusPorUrl.set(status, statusPorUrl.get(status) + 1);
+                }
+
+                // VUs
+                if (obj.type === 'Point' && obj.metric === 'vus') {
+                  vusPoints.push({ time: obj.data.time, value: obj.data.value });
+                }
+
+                // VUs Max
+                let vusMax = 0;
+                if (obj.type === 'Point' && obj.metric === 'vus_max') {
+                  vusMax = Math.max(vusMax, obj.data.value);
+                }
+
+                // Data transfer
+                if (obj.type === 'Point' && obj.metric === 'data_sent') {
+                  dataPoints.sent += obj.data.value;
+                }
+                if (obj.type === 'Point' && obj.metric === 'data_received') {
+                  dataPoints.received += obj.data.value;
+                }
+
+                // Iteraciones
+                if (obj.type === 'Point' && obj.metric === 'iterations') {
+                  iteraciones = obj.data.value;
+                }
+
+                // Timestamps
+                if (obj.type === 'Point' && !tiempoInicio) {
+                  tiempoInicio = obj.data.time;
+                }
+                if (obj.type === 'Point') {
+                  tiempoFin = obj.data.time;
+                }
+
+                // Checks (formato 1: Point con metric checks)
+                if (obj.type === 'Point' && obj.metric === 'checks') {
+                  const checkName = obj.data.tags?.check || 'unknown';
+                  if (!checks.porNombre.has(checkName)) {
+                    checks.porNombre.set(checkName, { pasaron: 0, fallaron: 0 });
+                  }
+                  if (obj.data.value === 1) {
+                    checks.exitosos++;
+                    checks.porNombre.get(checkName).pasaron++;
+                  } else {
+                    checks.fallidos++;
+                    checks.porNombre.get(checkName).fallaron++;
+                  }
+                }
+
+                // Checks (formato 2: tipo Check)
+                if (obj.type === 'Check') {
+                  const checkName = obj.data.check || 'unknown';
+                  if (!checks.porNombre.has(checkName)) {
+                    checks.porNombre.set(checkName, { pasaron: 0, fallaron: 0 });
+                  }
+                  if (obj.data.pass) {
+                    checks.exitosos++;
+                    checks.porNombre.get(checkName).pasaron++;
+                  } else {
+                    checks.fallidos++;
+                    checks.porNombre.get(checkName).fallaron++;
+                  }
+                }
+
+                // Guardar vusMax
+                if (obj.type === 'Point' && obj.metric === 'vus_max') {
+                  window._vusMaxTemp = Math.max(window._vusMaxTemp || 0, obj.data.value);
+                }
+
+              } catch (e) {
+                // Ignorar líneas no parseables
+              }
+            }
+
+            const vusMax = window._vusMaxTemp || 0;
+
+            // Calcular estadísticas
+            const duracionesOrdenadas = [...duraciones].sort((a, b) => a - b);
+            const suma = duraciones.reduce((a, b) => a + b, 0);
+            const promedio = duraciones.length ? (suma / duraciones.length).toFixed(2) : 0;
+            const minimo = duraciones.length ? Math.min(...duraciones).toFixed(2) : 0;
+            const maximo = duraciones.length ? Math.max(...duraciones).toFixed(2) : 0;
+
+            let p95 = 0;
+            if (duracionesOrdenadas.length) {
+              const p95Index = Math.floor(duracionesOrdenadas.length * 0.95);
+              p95 = duracionesOrdenadas[p95Index].toFixed(2);
+            }
+
+            let desviacion = 0;
+            if (duraciones.length) {
+              const media = suma / duraciones.length;
+              const variance = duraciones.reduce((acc, val) => acc + Math.pow(val - media, 2), 0) / duraciones.length;
+              desviacion = Math.sqrt(variance).toFixed(2);
+            }
+
+            // Calcular RPS (peticiones por segundo)
+            let duracionTotal = 0;
+            if (tiempoInicio && tiempoFin) {
+              duracionTotal = (new Date(tiempoFin) - new Date(tiempoInicio)) / 1000;
+            }
+            const rps = duracionTotal > 0 ? duraciones.length / duracionTotal : 0;
+
+            // Calcular por URL
+            const peticionesPorUrlArray = Array.from(peticionesPorUrl.values()).map(item => ({
+              ...item,
+              avg: (item.total / item.count).toFixed(2)
+            }));
+
+            // Detalle de checks
+            const detalleChecks = Array.from(checks.porNombre.entries()).map(([name, data]) => ({
+              name,
+              pasaron: data.pasaron,
+              fallaron: data.fallaron,
+              total: data.pasaron + data.fallaron,
+              tasa: ((data.pasaron / (data.pasaron + data.fallaron)) * 100)
+            }));
+
+            const totalChecks = checks.exitosos + checks.fallidos;
+            const porcentajeChecks = totalChecks ? ((checks.exitosos / totalChecks) * 100) : 100;
+            const tasaFallos = duraciones.length ? ((checks.fallidos / totalChecks) * 100).toFixed(2) : 0;
+
+            metricas.value = {
+              totalPeticiones: duraciones.length,
+              promedio: promedio,
+              p95: p95,
+              tasaExito: porcentajeChecks.toFixed(2),
+              tasaFallos: tasaFallos,
+              minimo: minimo,
+              maximo: maximo,
+              desviacion: desviacion,
+              checksExitosos: checks.exitosos,
+              checksFallidos: checks.fallidos,
+              porcentajeChecks: porcentajeChecks.toFixed(2),
+              detalleChecks: detalleChecks,
+              peticionesPorUrl: peticionesPorUrlArray,
+              statusPorUrl: Object.fromEntries(statusPorUrl),
+              vusMax: vusMax,
+              dataSent: dataPoints.sent,
+              dataReceived: dataPoints.received,
+              rps: rps,
+              duracionTotal: `${duracionTotal.toFixed(2)}s`,
+              duraciones: duraciones,
+              vusPoints: vusPoints
+            };
+
+            // Renderizar gráficas
+            const statusObject = Object.fromEntries(statusPorUrl)
+            setTimeout(() => {
+              renderizarHistograma(duraciones);
+              renderizarGraficaVUs(vusPoints);
+              renderizarGraficaStatus(statusObject);
+            }, 100);
+
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Error al procesar el archivo. Asegúrate de que sea un JSON válido de k6.');
+          } finally {
+            cargando.value = false;
+          }
+        };
+
+        const renderizarHistograma = (duraciones) => {
+          const canvas = document.getElementById('histogramaChart');
+          if (!canvas || !duraciones.length) return;
+
+          if (charts.histograma) charts.histograma.destroy();
+
+          const rangos = [
+            { label: '< 50ms', max: 50 },
+            { label: '50-100ms', min: 50, max: 100 },
+            { label: '100-200ms', min: 100, max: 200 },
+            { label: '200-500ms', min: 200, max: 500 },
+            { label: '500-1000ms', min: 500, max: 1000 },
+            { label: '> 1000ms', min: 1000 }
+          ];
+
+          const counts = new Array(rangos.length).fill(0);
+          duraciones.forEach(d => {
+            for (let i = 0; i < rangos.length; i++) {
+              const r = rangos[i];
+              if (r.min === undefined && d <= r.max) { counts[i]++; break; }
+              else if (r.max === undefined && d >= r.min) { counts[i]++; break; }
+              else if (r.min !== undefined && r.max !== undefined && d >= r.min && d < r.max) { counts[i]++; break; }
+            }
+          });
+
+          const ctx = canvas.getContext('2d');
+          charts.histograma = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: rangos.map(r => r.label),
+              datasets: [{
+                label: 'Peticiones',
+                data: counts,
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderColor: 'rgba(102, 126, 234, 1)',
+                borderWidth: 1,
+                borderRadius: 5
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function (context) {
+                      const total = duraciones.length;
+                      const porcentaje = ((context.raw / total) * 100).toFixed(1);
+                      return `${context.raw} peticiones (${porcentaje}%)`;
+                    }
+                  }
+                }
+              }
+            }
+          });
+        };
+
+        const renderizarGraficaVUs = (vusPoints) => {
+          const canvas = document.getElementById('vusChart');
+          if (!canvas || !vusPoints.length) return;
+
+          if (charts.vus) charts.vus.destroy();
+
+          const times = vusPoints.map(p => new Date(p.time).toLocaleTimeString());
+          const values = vusPoints.map(p => p.value);
+
+          const ctx = canvas.getContext('2d');
+          charts.vus = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: times,
+              datasets: [{
+                label: 'Usuarios Virtuales (VUs)',
+                data: values,
+                borderColor: 'rgba(102, 126, 234, 1)',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                fill: true,
+                tension: 0.4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                tooltip: {
+                  callbacks: {
+                    label: function (context) {
+                      return `${context.raw} VUs`;
+                    }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  title: { display: true, text: 'VUs' }
+                },
+                x: {
+                  title: { display: true, text: 'Tiempo' },
+                  ticks: { maxTicksLimit: 10 }
+                }
+              }
+            }
+          });
+        };
+
+        const renderizarGraficaStatus = (statusPorUrl) => {
+          console.log(statusPorUrl, document.getElementById('statusChart'))
+          const canvas = document.getElementById('statusChart');
+          if (!canvas || !Object.keys(statusPorUrl).length){
+            return;
+          }
+
+          if (charts.status) charts.status.destroy();
+
+          const labels = Object.keys(statusPorUrl);
+          const data = Object.values(statusPorUrl);
+          const colors = {
+            '200': 'rgba(16, 185, 129, 0.7)',
+            '302': 'rgba(245, 158, 11, 0.7)',
+            '404': 'rgba(239, 68, 68, 0.7)',
+            '500': 'rgba(139, 92, 246, 0.7)'
+          };
+
+          const backgroundColors = labels.map(label => colors[label] || 'rgba(107, 114, 128, 0.7)');
+
+          const ctx = canvas.getContext('2d');
+          charts.status = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+              labels: labels.map(l => `HTTP ${l}`),
+              datasets: [{
+                data: data,
+                backgroundColor: backgroundColors,
+                borderWidth: 0
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                  callbacks: {
+                    label: function (context) {
+                      const total = data.reduce((a, b) => a + b, 0);
+                      const porcentaje = ((context.raw / total) * 100).toFixed(1);
+                      return `${context.label}: ${context.raw} (${porcentaje}%)`;
+                    }
+                  }
+                }
+              }
+            }
+          });
+        };
+
+        const cargarArchivo = () => {
+          fileInput.value.click();
+        };
+
+        return {
+          cargando,
+          metricas,
+          fileInput,
+          procesarArchivo,
+          cargarArchivo,
+          formatNumber,
+          formatBytes,
+          truncarUrl
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+
+</html>

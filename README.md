@@ -7,14 +7,14 @@ Herramientas visuales para pruebas de carga con k6, sin necesidad de instalar de
 | Archivo | Descripción |
 |---|---|
 | `index.html` | Dashboard para visualizar resultados de pruebas |
-| `generador.html` | Generador visual de scripts k6 |
+| `https://mizunie.com/tool/k6-generator` | Generador visual de scripts k6 |
 | `test.js` | Script de ejemplo incluido |
 
 ## Uso rápido
 
 ### 1. Generar un script
 
-Abre `generador.html` en tu navegador. Desde ahí puedes configurar:
+Abre `https://mizunie.com/tool/k6-generator` en tu navegador. Desde ahí puedes configurar:
 
 - Patrón de carga: VUs constantes o stages (ramping)
 - Peticiones HTTP (GET, POST, PUT, PATCH, DELETE) con headers y body

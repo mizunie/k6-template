@@ -3,23 +3,32 @@ import { check, sleep } from 'k6';
 
 export const options = {
   stages: [
-    { duration: '30s', target: 20 },
-    { duration: '1m', target: 20 },
-    { duration: '30s', target: 0 },
+    { duration: '10s', target: 5 },
+    { duration: '20s', target: 5 },
+    { duration: '10s', target: 0 },
   ],
   thresholds: {
-    http_req_duration: ['p(95)<500'],
-    http_req_failed: ['rate<0.01'],
+    http_req_duration: ['p(95)<5000'],
   },
 };
 
+const URLS = [
+  'https://httpbin.org/status/200',
+  'https://httpbin.org/status/500',
+  'https://httpbin.org/status/502',
+  'https://httpbin.org/status/503',
+  'https://httpbin.org/status/404',
+  'https://httpbin.org/status/403',
+  'https://httpbin.org/status/401',
+];
+
 export default function () {
-  let res = http.get('https://test-api.k6.io/public/crocodiles/');
-  
+  const url = URLS[Math.floor(Math.random() * URLS.length)];
+  const res = http.get(url);
+
   check(res, {
-    'status es 200': (r) => r.status === 200,
-    'cuerpo no está vacío': (r) => r.body && r.body.length > 0,
+    'status 200': (r) => r.status === 200,
   });
-  
+
   sleep(1);
 }

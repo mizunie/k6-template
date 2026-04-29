@@ -58,6 +58,10 @@
       border-radius: 4px;
     }
 
+    .card{
+      width: 100%;
+    }
+
     .metric-card {
       transition: transform 0.2s;
       cursor: pointer;
@@ -72,16 +76,17 @@
       height: 300px;
     }
 
-    .badge-302 {
-      background-color: #f59e0b;
-    }
-
-    .badge-200 {
-      background-color: #10b981;
-    }
-
     hr {
       margin: 1rem 0;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      max-height: 350px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
   </style>
 </head>
@@ -297,15 +302,76 @@
 
         <!-- Fila 4: Métricas por URL y Status -->
         <div class="row g-4 mb-4">
-          <div class="col-md-6">
+          <div class="col-md-6 d-flex">
             <div class="card border-0 shadow">
               <div class="card-header bg-white border-0 pt-4">
                 <h5 class="mb-0"><i class="fas fa-globe"></i> Detalle por URL</h5>
               </div>
               <div class="card-body">
-                <div class="table-responsive">
+                <!-- Filtros -->
+                <div class="mb-3">
+                  <div class="row g-2">
+                    <div class="col">
+                      <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0 rounded-start">
+                          <i class="fas fa-search text-muted"></i>
+                        </span>
+                        <input type="text" class="form-control border-start-0" placeholder="Filtrar URLs..."
+                          v-model="filtroUrl" style="font-size: 0.875rem;">
+                      </div>
+                    </div>
+                    <div class="col-auto">
+                      <select class="form-select form-select-sm rounded" v-model="filtroStatus"
+                        style="font-size: 0.875rem;">
+                        <option value="">Todos los status</option>
+                        <option v-for="s in statusesDisponibles" :key="s" :value="s">HTTP {{ s }}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 🆕 Totalizadores filtrados (solo visibles cuando hay filtro) -->
+                <div v-if="filtroActivo" class="bg-light rounded-3 p-2 mb-3">
+                  <div class="row text-center g-1">
+                    <div class="col-3">
+                      <div class="fw-bold" :class="{ 'text-primary': filtroActivo }">
+                        {{ formatNumber(totalesFiltrados.peticiones) }}
+                      </div>
+                      <small class="text-muted" style="font-size: 0.7rem;">peticiones</small>
+                    </div>
+                    <div class="col-3">
+                      <div class="fw-bold text-success">{{ totalesFiltrados.tasaExito }}%</div>
+                      <small class="text-muted" style="font-size: 0.7rem;">éxito</small>
+                    </div>
+                    <div class="col-3">
+                      <div class="fw-bold" :class="totalesFiltrados.fallidas > 0 ? 'text-danger' : 'text-muted'">
+                        {{ totalesFiltrados.tasaFallos }}%
+                      </div>
+                      <small class="text-muted" style="font-size: 0.7rem;">fallos</small>
+                    </div>
+                    <div class="col-3">
+                      <div class="fw-bold" :class="{ 'text-warning': totalesFiltrados.duracionPromedio > 500 }">
+                        {{ totalesFiltrados.duracionPromedio }}ms
+                      </div>
+                      <small class="text-muted" style="font-size: 0.7rem;">promedio</small>
+                    </div>
+                  </div>
+                  <small class="text-muted d-block text-center mt-1" style="font-size: 0.7rem;">
+                    {{ urlsUnicasVisibles }} URL{{ urlsUnicasVisibles !== 1 ? 's' : '' }}
+                    de {{ metricas.peticionesPorUrl?.length || 0 }}
+                  </small>
+                </div>
+
+                <!-- Sin filtro: resumen rápido -->
+                <div v-else class="text-muted small mb-3">
+                  <span class="fw-bold text-dark">{{ metricas.peticionesPorUrl?.length || 0 }} URLs</span> ·
+                  <span>{{ formatNumber(metricas.totalPeticiones) }} peticiones</span>
+                </div>
+
+                <!-- Tabla -->
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                   <table class="table table-sm">
-                    <thead>
+                    <thead class="sticky-top bg-white">
                       <tr>
                         <th>URL</th>
                         <th>Peticiones</th>
@@ -314,12 +380,12 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="url in metricas.peticionesPorUrl" :key="url.name">
-                        <td><code class="small">{{ truncarUrl(url.name) }}</code></td>
+                      <tr v-for="url in urlsFiltradas" :key="url.name">
+                        <td><code class="small" :title="url.name">{{ truncarUrl(url.name) }}</code></td>
                         <td>{{ url.count }}</td>
                         <td>{{ url.avg }}ms</td>
                         <td>
-                          <span :class="'badge badge-' + url.status">{{ url.status }}</span>
+                          <span class="badge" :style="getBadgeStyle(url.status)">{{ url.status }}</span>
                         </td>
                       </tr>
                     </tbody>
@@ -329,7 +395,7 @@
             </div>
           </div>
 
-          <div class="col-md-6">
+          <div class="col-md-6 d-flex">
             <div class="card border-0 shadow">
               <div class="card-header bg-white border-0 pt-4">
                 <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Distribución por Status</h5>
@@ -426,7 +492,7 @@
   </div>
 
   <script>
-    const { createApp, ref } = Vue;
+    const { createApp, ref, computed } = Vue;
 
     createApp({
       setup() {
@@ -448,8 +514,26 @@
         };
 
         const truncarUrl = (url) => {
-          const partes = url.split('/');
-          return partes[partes.length - 1] || url;
+          try {
+            const parsed = new URL(url);
+            let path = parsed.pathname + parsed.search;
+
+            let hash = 0;
+            const fullPath = parsed.hostname + path;
+            for (let i = 0; i < fullPath.length; i++) {
+              hash = ((hash << 5) - hash) + fullPath.charCodeAt(i);
+              hash |= 0;
+            }
+            const firma = Math.abs(hash).toString(36).toUpperCase();
+
+            const partes = path.split('/').filter(p => p);
+            if (partes.length > 1) {
+              return `${firma} .../${partes.slice(-1).join('/')}`;
+            }
+            return `${firma} ${path || parsed.hostname}`;
+          } catch {
+            return url.length > 30 ? url + '...' : url;
+          }
         };
 
         const procesarArchivo = async (event) => {
@@ -473,6 +557,8 @@
             let tiempoInicio = null;
             let tiempoFin = null;
 
+            let vusMax = 0;
+            let peticionesFallidas = 0;
             for (const linea of lineas) {
               try {
                 const obj = JSON.parse(linea);
@@ -505,8 +591,11 @@
                   vusPoints.push({ time: obj.data.time, value: obj.data.value });
                 }
 
+                if (obj.type === 'Point' && obj.metric === 'http_req_failed') {
+                  peticionesFallidas += obj.data.value;
+                }
+
                 // VUs Max
-                let vusMax = 0;
                 if (obj.type === 'Point' && obj.metric === 'vus_max') {
                   vusMax = Math.max(vusMax, obj.data.value);
                 }
@@ -561,18 +650,10 @@
                     checks.porNombre.get(checkName).fallaron++;
                   }
                 }
-
-                // Guardar vusMax
-                if (obj.type === 'Point' && obj.metric === 'vus_max') {
-                  window._vusMaxTemp = Math.max(window._vusMaxTemp || 0, obj.data.value);
-                }
-
               } catch (e) {
                 // Ignorar líneas no parseables
               }
             }
-
-            const vusMax = window._vusMaxTemp || 0;
 
             // Calcular estadísticas
             const duracionesOrdenadas = [...duraciones].sort((a, b) => a - b);
@@ -618,7 +699,7 @@
 
             const totalChecks = checks.exitosos + checks.fallidos;
             const porcentajeChecks = totalChecks ? ((checks.exitosos / totalChecks) * 100) : 100;
-            const tasaFallos = duraciones.length ? ((checks.fallidos / totalChecks) * 100).toFixed(2) : 0;
+            const tasaFallos = duraciones.length ? ((checks.fallidos / duraciones.length) * 100).toFixed(2) : 0;
 
             metricas.value = {
               totalPeticiones: duraciones.length,
@@ -718,6 +799,17 @@
           });
         };
 
+        const getBadgeStyle = (code) => {
+          const s = String(code);
+          let bg;
+          if (s.startsWith('2')) bg = '#10b981';
+          else if (s.startsWith('3')) bg = '#f59e0b';
+          else if (s.startsWith('4')) bg = '#ef4444';
+          else if (s.startsWith('5')) bg = '#8b5cf6';
+          else bg = '#ef4444'; // default rojo
+          return { backgroundColor: bg, color: '#fff' };
+        };
+
         const renderizarGraficaVUs = (vusPoints) => {
           const canvas = document.getElementById('vusChart');
           if (!canvas || !vusPoints.length) return;
@@ -767,25 +859,28 @@
           });
         };
 
-        const renderizarGraficaStatus = (statusPorUrl) => {
-          console.log(statusPorUrl, document.getElementById('statusChart'))
+        const renderizarGraficaStatus = (statusCounts) => {
           const canvas = document.getElementById('statusChart');
-          if (!canvas || !Object.keys(statusPorUrl).length){
+          if (!canvas || !Object.keys(statusCounts).length) {
             return;
           }
 
           if (charts.status) charts.status.destroy();
 
-          const labels = Object.keys(statusPorUrl);
-          const data = Object.values(statusPorUrl);
-          const colors = {
-            '200': 'rgba(16, 185, 129, 0.7)',
-            '302': 'rgba(245, 158, 11, 0.7)',
-            '404': 'rgba(239, 68, 68, 0.7)',
-            '500': 'rgba(139, 92, 246, 0.7)'
+          const labels = Object.keys(statusCounts);
+          const data = Object.values(statusCounts);
+
+          // 🆕 Color por categoría HTTP + default rojo para cualquier error
+          const getStatusColor = (code) => {
+            const s = String(code);
+            if (s.startsWith('2')) return 'rgba(16, 185, 129, 0.7)';   // verde éxito
+            if (s.startsWith('3')) return 'rgba(245, 158, 11, 0.7)';   // naranja redirect
+            if (s.startsWith('4')) return 'rgba(239, 68, 68, 0.7)';    // rojo error cliente
+            if (s.startsWith('5')) return 'rgba(139, 92, 246, 0.7)';   // púrpura error servidor
+            return 'rgba(239, 68, 68, 0.7)';                           // default rojo (unknown/0)
           };
 
-          const backgroundColors = labels.map(label => colors[label] || 'rgba(107, 114, 128, 0.7)');
+          const backgroundColors = labels.map(label => getStatusColor(label));
 
           const ctx = canvas.getContext('2d');
           charts.status = new Chart(ctx, {
@@ -821,6 +916,89 @@
           fileInput.value.click();
         };
 
+        const filtroUrl = ref('');
+
+        const filtroStatus = ref('');
+
+        // Status codes únicos disponibles
+        const statusesDisponibles = computed(() => {
+          if (!metricas.value?.peticionesPorUrl) return [];
+          const statuses = new Set(metricas.value.peticionesPorUrl.map(u => u.status));
+          return [...statuses].sort((a, b) => a - b);
+        });
+
+        // Filtro combinado (texto + status)
+        const urlsFiltradas = computed(() => {
+          if (!metricas.value) return [];
+          let urls = metricas.value.peticionesPorUrl;
+
+          const filtro = filtroUrl.value.toLowerCase().trim();
+          if (filtro) {
+            urls = urls.filter(u =>
+              u.name.toLowerCase().includes(filtro) ||
+              u.status.toString().includes(filtro)
+            );
+          }
+
+          if (filtroStatus.value) {
+            urls = urls.filter(u => u.status === (filtroStatus.value));
+          }
+
+          return urls;
+        });
+
+        // 🆕 Totalizadores dinámicos basados en las URLs filtradas
+        const totalesFiltrados = computed(() => {
+          if (!urlsFiltradas.value || urlsFiltradas.value.length === 0) {
+            return {
+              peticiones: 0,
+              exitosas: 0,
+              fallidas: 0,
+              tasaExito: 0,
+              tasaFallos: 0,
+              duracionPromedio: 0,
+              duracionMin: 0,
+              duracionMax: 0,
+              p95: 0
+            };
+          }
+
+          const total = urlsFiltradas.value.reduce((acc, url) => acc + url.count, 0);
+          const exitosas = urlsFiltradas.value.reduce((acc, url) => {
+            return acc + (url.status >= 200 && url.status < 400 ? url.count : 0);
+          }, 0);
+          const fallidas = total - exitosas;
+
+          // Duración promedio ponderada
+          const duracionTotal = urlsFiltradas.value.reduce((acc, url) => acc + (url.avg * url.count), 0);
+          const duracionPromedio = total > 0 ? Math.round(duracionTotal / total) : 0;
+
+          // Mín y máx entre las URLs visibles
+          const duraciones = urlsFiltradas.value.map(u => u.avg);
+          const duracionMin = duraciones.length ? Math.min(...duraciones) : 0;
+          const duracionMax = duraciones.length ? Math.max(...duraciones) : 0;
+
+          return {
+            peticiones: total,
+            exitosas: exitosas,
+            fallidas: fallidas,
+            tasaExito: total > 0 ? ((exitosas / total) * 100).toFixed(1) : 0,
+            tasaFallos: total > 0 ? ((fallidas / total) * 100).toFixed(1) : 0,
+            duracionPromedio: duracionPromedio,
+            duracionMin: duracionMin,
+            duracionMax: duracionMax
+          };
+        });
+
+        // 🆕 URLs únicas visibles
+        const urlsUnicasVisibles = computed(() => {
+          return urlsFiltradas.value?.length || 0;
+        });
+
+        const filtroActivo = computed(() => {
+          return filtroUrl.value !== '' || filtroStatus.value !== '';
+        });
+
         return {
           cargando,
           metricas,
@@ -829,7 +1007,15 @@
           cargarArchivo,
           formatNumber,
           formatBytes,
-          truncarUrl
+          truncarUrl,
+          getBadgeStyle,
+          filtroUrl,
+          filtroStatus,
+          statusesDisponibles,
+          urlsFiltradas,
+          filtroActivo,
+          totalesFiltrados,
+          urlsUnicasVisibles,
         };
       }
     }).mount('#app');

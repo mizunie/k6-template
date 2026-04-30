@@ -700,13 +700,22 @@
 
             const totalChecks = checks.exitosos + checks.fallidos;
             const porcentajeChecks = totalChecks ? ((checks.exitosos / totalChecks) * 100) : 100;
-            const tasaFallos = duraciones.length ? ((checks.fallidos / duraciones.length) * 100).toFixed(2) : 0;
+
+            // ✅ CORRECCIÓN: Calcular tasa de fallos basada en status codes HTTP reales
+            const peticionesExitosas = Array.from(statusPorUrl.entries())
+              .filter(([status]) => String(status).startsWith('2') || String(status).startsWith('3'))
+              .reduce((sum, [, count]) => sum + count, 0);
+            const totalPeticionesStatus = Array.from(statusPorUrl.values())
+              .reduce((sum, count) => sum + count, 0);
+            const fallosReales = totalPeticionesStatus - peticionesExitosas;
+            const tasaFallos = totalPeticionesStatus ? ((fallosReales / totalPeticionesStatus) * 100).toFixed(2) : 0;
+            const tasaExitoStatus = totalPeticionesStatus ? ((peticionesExitosas / totalPeticionesStatus) * 100).toFixed(2) : 0;
 
             metricas.value = {
               totalPeticiones: duraciones.length,
               promedio: promedio,
               p95: p95,
-              tasaExito: porcentajeChecks.toFixed(2),
+              tasaExito: tasaExitoStatus,
               tasaFallos: tasaFallos,
               minimo: minimo,
               maximo: maximo,

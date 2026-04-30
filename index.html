@@ -373,14 +373,30 @@
                   <table class="table table-sm">
                     <thead class="sticky-top bg-white">
                       <tr>
-                        <th>URL</th>
-                        <th>Peticiones</th>
-                        <th>Promedio</th>
-                        <th>Status</th>
+                        <th style="cursor: pointer;" @click="ordenarPor('url')">
+                          URL
+                          <i v-if="ordenColumna === 'url'"
+                            :class="ordenDireccion === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                        </th>
+                        <th style="cursor: pointer;" @click="ordenarPor('count')">
+                          Peticiones
+                          <i v-if="ordenColumna === 'count'"
+                            :class="ordenDireccion === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                        </th>
+                        <th style="cursor: pointer;" @click="ordenarPor('avg')">
+                          Promedio
+                          <i v-if="ordenColumna === 'avg'"
+                            :class="ordenDireccion === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                        </th>
+                        <th style="cursor: pointer;" @click="ordenarPor('status')">
+                          Status
+                          <i v-if="ordenColumna === 'status'"
+                            :class="ordenDireccion === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="url in urlsFiltradas" :key="url.name">
+                      <tr v-for="url in urlsFiltradasYOrdenadas" :key="url.name + url.status">
                         <td><code class="small" :title="url.name">{{ truncarUrl(url.name) }}</code></td>
                         <td>{{ url.count }}</td>
                         <td>{{ url.avg }}ms</td>
@@ -503,6 +519,9 @@
         let charts = {};
         const statusVisibles = ref({});
         const totalStatusVisible = ref(0);
+        const ordenColumna = ref('');
+        const ordenDireccion = ref('asc');
+
 
         const formatBytes = (bytes) => {
           if (!bytes) return '0 B';
@@ -1012,6 +1031,49 @@
           return urls;
         });
 
+        const urlsFiltradasYOrdenadas = computed(() => {
+          const urls = [...urlsFiltradas.value];
+          if (!ordenColumna.value) return urls;
+
+          const dir = ordenDireccion.value === 'asc' ? 1 : -1;
+
+          urls.sort((a, b) => {
+            let valA, valB;
+            switch (ordenColumna.value) {
+              case 'url':
+                valA = a.name.toLowerCase();
+                valB = b.name.toLowerCase();
+                return valA.localeCompare(valB) * dir;
+              case 'count':
+                valA = a.count;
+                valB = b.count;
+                break;
+              case 'avg':
+                valA = parseFloat(a.avg);
+                valB = parseFloat(b.avg);
+                break;
+              case 'status':
+                valA = parseInt(a.status) || 0;
+                valB = parseInt(b.status) || 0;
+                break;
+              default:
+                return 0;
+            }
+            return (valA - valB) * dir;
+          });
+
+          return urls;
+        });
+
+        const ordenarPor = (columna) => {
+          if (ordenColumna.value === columna) {
+            ordenDireccion.value = ordenDireccion.value === 'asc' ? 'desc' : 'asc';
+          } else {
+            ordenColumna.value = columna;
+            ordenDireccion.value = 'asc';
+          }
+        };
+
         // 🆕 Totalizadores dinámicos basados en las URLs filtradas
         const totalesFiltrados = computed(() => {
           if (!urlsFiltradas.value || urlsFiltradas.value.length === 0) {
@@ -1078,6 +1140,10 @@
           filtroStatus,
           statusesDisponibles,
           urlsFiltradas,
+          urlsFiltradasYOrdenadas,
+          ordenColumna,
+          ordenDireccion,
+          ordenarPor,
           filtroActivo,
           totalesFiltrados,
           urlsUnicasVisibles,

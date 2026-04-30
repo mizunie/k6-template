@@ -58,7 +58,7 @@
       border-radius: 4px;
     }
 
-    .card{
+    .card {
       width: 100%;
     }
 
@@ -404,6 +404,7 @@
                 <div class="chart-container">
                   <canvas id="statusChart"></canvas>
                 </div>
+                <p id="statusTotal" class="text-center text-muted small mt-2 mb-0"></p>
               </div>
             </div>
           </div>
@@ -500,6 +501,8 @@
         const metricas = ref(null);
         const fileInput = ref(null);
         let charts = {};
+        const statusVisibles = ref({});
+        const totalStatusVisible = ref(0);
 
         const formatBytes = (bytes) => {
           if (!bytes) return '0 B';
@@ -558,7 +561,6 @@
             let tiempoFin = null;
 
             let vusMax = 0;
-            let peticionesFallidas = 0;
             for (const linea of lineas) {
               try {
                 const obj = JSON.parse(linea);
@@ -590,10 +592,6 @@
                 // VUs
                 if (obj.type === 'Point' && obj.metric === 'vus') {
                   vusPoints.push({ time: obj.data.time, value: obj.data.value });
-                }
-
-                if (obj.type === 'Point' && obj.metric === 'http_req_failed') {
-                  peticionesFallidas += obj.data.value;
                 }
 
                 // VUs Max
@@ -701,7 +699,6 @@
             const totalChecks = checks.exitosos + checks.fallidos;
             const porcentajeChecks = totalChecks ? ((checks.exitosos / totalChecks) * 100) : 100;
 
-            // ✅ CORRECCIÓN: Calcular tasa de fallos basada en status codes HTTP reales
             const peticionesExitosas = Array.from(statusPorUrl.entries())
               .filter(([status]) => String(status).startsWith('2') || String(status).startsWith('3'))
               .reduce((sum, [, count]) => sum + count, 0);
@@ -871,7 +868,10 @@
 
         const renderizarGraficaStatus = (statusCounts) => {
           const canvas = document.getElementById('statusChart');
+          const totalParagraph = document.getElementById('statusTotal');
+
           if (!canvas || !Object.keys(statusCounts).length) {
+            if (totalParagraph) totalParagraph.textContent = 'Sin datos disponibles';
             return;
           }
 
@@ -879,18 +879,54 @@
 
           const labels = Object.keys(statusCounts);
           const data = Object.values(statusCounts);
+          const totalGeneral = data.reduce((a, b) => a + b, 0);
 
-          // 🆕 Color por categoría HTTP + default rojo para cualquier error
           const getStatusColor = (code) => {
             const s = String(code);
-            if (s.startsWith('2')) return 'rgba(16, 185, 129, 0.7)';   // verde éxito
-            if (s.startsWith('3')) return 'rgba(245, 158, 11, 0.7)';   // naranja redirect
-            if (s.startsWith('4')) return 'rgba(239, 68, 68, 0.7)';    // rojo error cliente
-            if (s.startsWith('5')) return 'rgba(139, 92, 246, 0.7)';   // púrpura error servidor
-            return 'rgba(239, 68, 68, 0.7)';                           // default rojo (unknown/0)
+            if (s.startsWith('2')) return 'rgba(16, 185, 129, 0.7)';
+            if (s.startsWith('3')) return 'rgba(245, 158, 11, 0.7)';
+            if (s.startsWith('4')) return 'rgba(239, 68, 68, 0.7)';
+            if (s.startsWith('5')) return 'rgba(139, 92, 246, 0.7)';
+            return 'rgba(239, 68, 68, 0.7)';
           };
 
           const backgroundColors = labels.map(label => getStatusColor(label));
+
+          const actualizarTotalVisible = (chart) => {
+            if (!totalParagraph) return;
+
+            const d = chart.data.datasets[0].data;
+            const len = d.length;
+
+            let totalVisible = 0;
+            let countVisible = 0;
+
+            for (let i = 0; i < len; i++) {
+              if (!chart.getDataVisibility(i)) continue;
+
+              totalVisible += d[i];
+              countVisible++;
+            }
+
+            if (countVisible === 0) {
+              totalParagraph.textContent = '⚠️ Sin elementos visibles';
+              totalParagraph.className = 'text-center text-warning small mt-2 mb-0';
+            } else if (countVisible === len) {
+              totalParagraph.textContent =
+                '✅ Total: ' + totalVisible.toLocaleString() +
+                ' peticiones en ' + countVisible + ' status';
+
+              totalParagraph.className =
+                'text-center text-success small mt-2 mb-0 fw-semibold';
+            } else {
+              totalParagraph.textContent =
+                '📊 Filtrado: ' + totalVisible.toLocaleString() +
+                ' peticiones en ' + countVisible + ' de ' + len + ' status';
+
+              totalParagraph.className =
+                'text-center text-primary small mt-2 mb-0';
+            }
+          };
 
           const ctx = canvas.getContext('2d');
           charts.status = new Chart(ctx, {
@@ -907,7 +943,21 @@
               responsive: true,
               maintainAspectRatio: true,
               plugins: {
-                legend: { position: 'bottom' },
+                legend: {
+                  position: 'bottom',
+                  onClick: (e, legendItem, legend) => {
+                    const ci = legend.chart;
+                    const index = legendItem.index;
+
+                    ci.toggleDataVisibility(index);
+
+                    ci.update();
+
+                    requestAnimationFrame(() => {
+                      actualizarTotalVisible(ci);
+                    });
+                  }
+                },
                 tooltip: {
                   callbacks: {
                     label: function (context) {
@@ -916,10 +966,15 @@
                       return `${context.label}: ${context.raw} (${porcentaje}%)`;
                     }
                   }
+                },
+                afterUpdate: function (chart) {
+                  actualizarTotalVisible(chart);
                 }
               }
             }
           });
+
+          setTimeout(() => actualizarTotalVisible(charts.status), 50);
         };
 
         const cargarArchivo = () => {

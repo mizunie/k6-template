@@ -571,11 +571,12 @@
 
                   duraciones.push(valor);
 
-                  // Agrupar por URL
-                  if (!peticionesPorUrl.has(url)) {
-                    peticionesPorUrl.set(url, { count: 0, total: 0, name: url, status: status });
+                  // Agrupar por URL + Status (clave compuesta)
+                  const clave = `${url}::${status}`;
+                  if (!peticionesPorUrl.has(clave)) {
+                    peticionesPorUrl.set(clave, { count: 0, total: 0, name: url, status: status });
                   }
-                  const urlData = peticionesPorUrl.get(url);
+                  const urlData = peticionesPorUrl.get(clave);
                   urlData.count++;
                   urlData.total += valor;
 
